@@ -7,11 +7,11 @@ from numba import jit
 
 from agent import expert_action
 
-
 class Connect4Env(gym.Env):
     """
     Fills top down as oppsoed to bottom up
     """
+
     def __init__(self, width=7, height=6, dense_reward=False):
         self.height = height
         self.width = width
@@ -24,6 +24,7 @@ class Connect4Env(gym.Env):
                                             dtype=int)
         self.action_space = spaces.Discrete(width)
         self.dense_reward = dense_reward
+        self.has_winner = False
         if dense_reward:
             self.num_three_in_a_row_p1 = 0
             self.num_two_in_a_row_p1 = 0
@@ -46,9 +47,8 @@ class Connect4Env(gym.Env):
                 self.board[i][action] = self.player
                 break
 
-        has_winner = have_winner(self.board, self.player)
-        done = has_winner or len(self.legal_actions()) == 0
-        reward = 1 if has_winner else 0
+        self.has_winner = have_winner(self.board, self.player)
+        reward = 1 if self.has_winner else 0
 
         if self.dense_reward and reward == 0:
             num_three_in_a_row = any_three(self.board, self.player)
@@ -73,12 +73,15 @@ class Connect4Env(gym.Env):
 
         self.player *= -1
 
-        return self.get_observation(), reward, done, []
+        return self.get_observation(), reward, self.game_over(), []
+
+    def game_over(self):
+        return self.has_winner or len(self.legal_actions()) == 0
 
     def get_observation(self):
         board_player1 = np.where(self.board == 1, 1.0, 0.0)
         board_player2 = np.where(self.board == -1, 1.0, 0.0)
-        board_to_play = np.full((6, 7), self.player, dtype="int32")
+        board_to_play = np.full((self.height, self.width), self.player, dtype="int32")
         return np.array([board_player1, board_player2, board_to_play])
 
     def legal_actions(self):
@@ -231,3 +234,15 @@ def any_two(board, player):
                 amt += 1
 
     return amt
+
+
+if __name__ == '__main__':
+    env = Connect4Env()
+    game_over = False
+
+    while not game_over:
+        print(env.board[::-1])
+        move = int(input(f'Choose move (Legal Actions: {env.legal_actions()}) :'))
+        print('Move chosen was', move)
+        env.step(move)
+        game_over = env.game_over()

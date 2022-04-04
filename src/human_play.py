@@ -1,5 +1,6 @@
 import time
 
+import numpy as np
 import pygame
 import pygame.gfxdraw
 import random
@@ -75,6 +76,7 @@ class Connect4Game(Observable):
 		"""
         self._board = [[0 for _ in range(self._rows)] for _ in range(self._cols)]
         self._turn = random.randint(1, 2)
+        #self._turn = 1
         self._won = None
         self.notify(Event.GAME_RESET)
 
@@ -238,6 +240,7 @@ class Connect4Viewer(Observer):
         self._screen = None
         self._font = None
 
+
     def initialize(self):
         """
 		Initialises the view window
@@ -297,9 +300,9 @@ class Connect4Viewer(Observer):
 		Displays win message on top of the board
 		"""
         if won == 1:
-            img = self._font.render("Yellow won", True, BLACK_COLOR, YELLOW_COLOR)
+            img = self._font.render(f"Yellow won", True, BLACK_COLOR, YELLOW_COLOR)
         elif won == 2:
-            img = self._font.render("Red won", True, WHITE_COLOR, RED_COLOR)
+            img = self._font.render(f"Red  won", True, WHITE_COLOR, RED_COLOR)
         else:
             img = self._font.render("Draw", True, WHITE_COLOR, BLUE_COLOR)
 
@@ -327,16 +330,16 @@ def load_ai_agent(path, env):
     return agent
 
 
-def watch_policy():
+def watch_self_play():
     game = Connect4Game()
     env = Connect4Env()
     game.reset_game()
 
-    view = Connect4Viewer(game=game)
+    view = Connect4Viewer(game=game, player1_name='AI', player2_name='AI')
     view.initialize()
 
     dqn_agent = load_ai_agent(
-        '/Users/szlota777/Desktop/Spring2022/Cs4910/connect_four/robo-connectfour/20220401-161419', env)
+        '/Users/szlota777/Desktop/Spring2022/Cs4910/connect_four/robo-connectfour/20220403-205650', env)
     running = True
     while running:
         for event in pygame.event.get():
@@ -347,49 +350,102 @@ def watch_policy():
                 computer_act = dqn_agent(env)
                 env.step(computer_act)
                 game.place(computer_act)
-                time.sleep(0.5)
+                print(env.board[::-1], env.legal_actions())
+                time.sleep(1)
             else:
                 game.reset_game()
+                env.reset()
 
+
+def watch_play_against_expert():
+    game = Connect4Game()
+    env = Connect4Env()
+    game.reset_game()
+
+    view = Connect4Viewer(game=game)
+    view.initialize()
+
+    # rand_agent = RandomAgent()
+    expert_agent = ExpertAgent()
+    dqn_agent = load_ai_agent(
+        '/Users/szlota777/Desktop/Spring2022/Cs4910/connect_four/robo-connectfour/20220403-205650', env)
+    running = True
+    expert_turn = True
+    while running:
+        for event in pygame.event.get():
+            print(env.board[::-1], env.legal_actions())
+            if event.type == pygame.QUIT:
+                running = False
+            if expert_turn:
+                if game.get_win() is None:
+                    expert_act = expert_agent(env)
+                    env.step(expert_act)
+                    game.place(expert_act)
+                    expert_turn = False
+                    time.sleep(1)
+                else:
+                    game.reset_game()
+                    env.reset()
+                    expert_turn = True
+            else:
+                if game.get_win() is None:
+                    print('Computer Running')
+                    computer_act = dqn_agent(env)
+                    env.step(computer_act)
+                    game.place(computer_act)
+                    expert_turn = True
+                    time.sleep(1)
+                else:
+                    game.reset_game()
+                    env.reset()
+                    expert_turn = True
 
 
 if __name__ == '__main__':
-    watch_policy()
-    # game = Connect4Game()
-    # env = Connect4Env()
-    # game.reset_game()
-    #
-    # view = Connect4Viewer(game=game)
-    # view.initialize()
-    #
-    # rand_agent = RandomAgent()
-    # expert_agent = ExpertAgent()
-    # dqn_agent = load_ai_agent('/Users/szlota777/Desktop/Spring2022/Cs4910/connect_four/robo-connectfour/20220331-180531')
-    # running = True
-    # human_turn = False
-    # while running:
-    #     for event in pygame.event.get():
-    #         if event.type == pygame.QUIT:
-    #             running = False
-    #         if human_turn:
-    #
-    #             if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-    #                 if game.get_win() is None:
-    #                     human_act = pygame.mouse.get_pos()[0] // SQUARE_SIZE
-    #                     env.step(human_act)
-    #                     game.place(human_act)
-    #                     human_turn = False
-    #                 else:
-    #                     game.reset_game()
-    #                     human_turn = False
-    #
-    #         else:
-    #             if game.get_win() is None:
-    #                 print('Computer Running')
-    #                 computer_act = dqn_agent(env)
-    #                 env.step(computer_act)
-    #                 game.place(computer_act)
-    #             else:
-    #                 game.reset_game()
-    #             human_turn = True
-
+    watch_play_against_expert()
+#  game = Connect4Game()
+#  env = Connect4Env()
+#  game.reset_game()
+#
+#  view = Connect4Viewer(game=game)
+#  view.initialize()
+#
+# # rand_agent = RandomAgent()
+#  expert_agent = ExpertAgent()
+#  dqn_agent = load_ai_agent( '/Users/szlota777/Desktop/Spring2022/Cs4910/connect_four/robo-connectfour/20220401-211405', env)
+#  running = True
+#  human_turn = False
+#  while running:
+#      for event in pygame.event.get():
+#          if event.type == pygame.QUIT:
+#              running = False
+#          if human_turn:
+#
+#              if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+#                  if game.get_win() is None:
+#                      human_act = pygame.mouse.get_pos()[0] // SQUARE_SIZE
+#                      env.step(human_act)
+#                      game.place(human_act)
+#                      human_turn = False
+#                  else:
+#                      game.reset_game()
+#                      human_turn = False
+#
+#          else:
+#              if game.get_win() is None:
+#                  print('Computer Running')
+#                  computer_act = dqn_agent(env)
+#                  env.step(computer_act)
+#                  game.place(computer_act)
+#              else:
+#                  game.reset_game()
+#              human_turn = True
+#              # if game.get_win() is None:
+#              #     print('Expert Running')
+#              #     expert_act = expert_agent(env)
+#              #     env.step(expert_act)
+#              #     game.place(expert_act)
+#              # else:
+#              #     game.reset_game()
+#              # human_turn = True
+#
