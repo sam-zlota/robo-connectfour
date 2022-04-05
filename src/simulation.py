@@ -72,13 +72,15 @@ def simulate_against_expert(agent, num_games=50):
 
 
 def random_baseline():
-    simulate_many_games(RandomAgent(), RandomAgent(), num_games=2500)
+    simulate_many_games(RandomAgent(), RandomAgent(), num_games=1000, report=True)
 
 
 def expert_baseline():
-    simulate_many_games(RandomAgent(), ExpertAgent(), num_games=2500)
+    simulate_many_games(RandomAgent(), ExpertAgent(), num_games=1000, report=True)
 
-
+def expert_baseline2():
+    simulate_many_games(ExpertAgent(), ExpertAgent(), num_games=3000, report=True)
 if __name__ == '__main__':
-    random_baseline()
-    expert_baseline()
+    # random_baseline()
+    # expert_baseline()
+    expert_baseline2()

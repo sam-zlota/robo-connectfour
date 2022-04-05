@@ -69,10 +69,10 @@ class DQNAgent:
         self.optim = torch.optim.Adam(self.network.parameters(),
                                       lr=learning_rate)
 
-        # self.scheduler =torch.optim.lr_scheduler.StepLR(self.optim , step_size=500_000, gamma=0.1)
+        # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optim, step_size=300_000, gamma=0.5)
 
-        # self.opponent = AgentOpponent(self.device, self.env.action_space.n)
-        # self.opponent.update(self.target_network)
+        self.opponent = AgentOpponent(self.device, self.env.action_space.n)
+        self.opponent.update(self.target_network)
 
         self.update_method = update_method
         self.plotting_smoothing = plotting_smoothing
@@ -81,15 +81,12 @@ class DQNAgent:
         if device == 'cuda':
             torch.cuda.manual_seed(seed)
 
-    def train(self, num_steps: int,save_path) -> None:
+    def train(self, num_steps: int, save_path) -> None:
         '''Trains q-network for given number of environment steps, plots
         rewards and loss curve
         '''
         rewards_data = []
         loss_data = []
-
-        success_data_simple = []
-        episode_len_simple = []
 
         success_data_rand = []
         episode_len_rand = []
@@ -99,6 +96,7 @@ class DQNAgent:
 
         training_episode_lengths = []
 
+        best_network = None
         episode_count = 0
         episode_rewards = 0
         opt_count = 0
@@ -108,20 +106,22 @@ class DQNAgent:
         episode_len = 0
         for step in pbar:
             epsilon = self.compute_epsilon(step / (self.exploration_fraction * num_steps))
-            epsilon = max(epsilon, 0.20)
+            # epsilon = max(epsilon, 0.20) #TODO fix this
 
             a = self._select_action(s, epsilon)
-            sp1, r, done, info = self.env.step(a)
+            sp, r, done, info = self.env.step(a)
             episode_len += 1
-            if not done:
-                a_opp = self._select_action(sp1, epsilon)
-                sp2, r_opp, done, info = self.env.step(a_opp)
-                r -= r_opp
-                episode_len += 1
+            # if not done:
+            #     # a_opp = self._select_action(sp1, epsilon)
+            #     a_opp = self._select_opp_action(epsilon)
+            #     sp, r_opp, done, info = self.env.step(a_opp)
+
+            #     r = -1 * r_opp
+            #     episode_len += 1
 
             episode_rewards += r
 
-            self.buffer.add_transition(s=s, a=a, r=r, sp=sp2, d=done)
+            self.buffer.add_transition(s=s, a=a, r=r, sp=sp, d=done)
 
             # optimize
             if self.buffer.length > self.batch_size:
@@ -131,7 +131,9 @@ class DQNAgent:
 
                 if opt_count % self.target_network_update_freq == 0:
                     self.hard_target_update()
-
+                    # self.opponent.update(self.network)
+            if step % 5000 == 0:
+                self.opponent.update(self.network)
             # evaluate
             if step % 2000 == 0:
                 # TODO expert success rate
@@ -139,37 +141,39 @@ class DQNAgent:
                 success_data_rand.append(success_rate_rand)
                 episode_len_rand.append(elen_rand)
                 success_rate_exp, elen_exp = simulate_against_expert(self)
+                if success_rate_exp > max(success_data_exp, default=0):
+                    best_network = self.network
+                    # self.opponent.update(self.network)
                 success_data_exp.append(success_rate_exp)
                 episode_len_exp.append(elen_exp)
                 pbar.set_description(f'Success = {success_rate_rand, success_rate_exp}')
+
                 if step % 20_000 == 0:
                     self.training_report(rewards_data,
                                          loss_data,
-                                         success_data_simple,
-                                         episode_len_simple,
                                          success_data_rand,
                                          episode_len_rand,
                                          success_data_exp,
                                          episode_len_exp,
                                          training_episode_lengths,
                                          save_path)
-            s = sp2.copy()
+            s = sp.copy()
             if done:
                 # s = self.env.reset(0)
-                # num_pre_moves = np.random.randint(low=0, high=40)
-                #num_pre_moves = int(np.random.rand() < 0.5)
-                s = self.env.reset()
-                self.env.player = 1 +( int(np.random.rand() < 0.5) * -2)
+                num_pre_moves = np.random.randint(low=0, high=40)
+                num_pre_moves = 0
+                # num_pre_moves = int(np.random.rand() < 0.5)
+                s = self.env.reset(num_pre_moves)
+                self.env.player = 1 + (int(np.random.rand() < 0.5) * -2)
                 rewards_data.append(episode_rewards)
                 episode_rewards = 0
                 episode_count += 1
                 training_episode_lengths.append(episode_len)
-                episode_len = 0
+                episode_len = num_pre_moves
 
+        best_network.save(os.path.join(save_path, 'best_network_weights'))
         return self.training_report(rewards_data,
                                     loss_data,
-                                    success_data_simple,
-                                    episode_len_simple,
                                     success_data_rand,
                                     episode_len_rand,
                                     success_data_exp,
@@ -198,7 +202,8 @@ class DQNAgent:
         q_pred = self.network(s).gather(1, a.unsqueeze(1)).squeeze()
         #
         with torch.no_grad():
-            q_target = r + self.gamma * torch.max(self.target_network(sp), dim=1)[0]  * (1 - d)
+            # TODO how to use done
+            q_target = r + self.gamma * torch.max(self.target_network(sp), dim=1)[0] # TODO
 
         # if self.update_method == 'standard':
         #     with torch.no_grad():
@@ -223,21 +228,43 @@ class DQNAgent:
         loss.backward()
 
         # it is common to clip gradient to prevent instability
-        #TODO
+        # TODO
         nn.utils.clip_grad_norm_(self.network.parameters(), 10)
         self.optim.step()
         # self.scheduler.step()
         return loss.item()
 
     def _select_action(self, state: np.ndarray, epsilon: float = 0.) -> int:
+        # if epsilon == 0.2:
+        #     if np.random.random() < epsilon:
+        #         return np.random.choice(self.env.legal_actions())
+        #     else:
+        #         return self.policy(self.env.get_observation())
+
         '''Performs e-greedy action selection'''
         if np.random.random() < epsilon:
-            #return np.random.choice(self.env.legal_actions())
-            return expert_action(self.env.board, self.env.player, np.random.choice(self.env.legal_actions()))
+            return np.random.choice(self.env.legal_actions())
+            # return expert_action(self.env.board, self.env.player, np.random.choice(self.env.legal_actions()))
         # elif np.random.random() < epsilon:
         #     return expert_action(self.env.board, self.env.player, np.random.choice(self.env.legal_actions()))
         else:
             return self.policy(self.env.get_observation())
+
+    def _select_opp_action(self, epsilon: float = 0.) -> int:
+        # if epsilon == 0.2:
+        #     if np.random.random() < epsilon:
+        #         return np.random.choice(self.env.legal_actions())
+        #     else:
+        #         return self.opponent.act(self.env)
+
+        '''Performs e-greedy action selection'''
+        if np.random.random() < epsilon:
+            return np.random.choice(self.env.legal_actions())
+            # return expert_action(self.env.board, self.env.player, np.random.choice(self.env.legal_actions()))
+        # elif np.random.random() < epsilon:
+        #     return expert_action(self.env.board, self.env.player, np.random.choice(self.env.legal_actions()))
+        else:
+            return self.opponent.act(self.env)
 
     def select_action(self, env):
         return self.policy(env.get_observation())
@@ -260,8 +287,6 @@ class DQNAgent:
     def training_report(self,
                         rewards_data,
                         loss_data,
-                        success_data_simple,
-                        episode_len_simple,
                         success_data_rand,
                         episode_len_rand,
                         success_data_exp,
@@ -300,12 +325,8 @@ class DQNAgent:
 
         plt.tight_layout()
         plt.savefig(os.path.join(save_path, datetime.now().strftime("%Y%m%d-%H%M%S") + '-fig.png'))
-        # if wait:
-        #     time.sleep(wait)
-        plt.close('all')
 
-    # def evaluate_against_random(self):
-    #     return
+        plt.close('all')
 
     def get_name(self):
         return "DQN Agent"
@@ -321,51 +342,35 @@ class DQNAgent:
 
 def main():
     env = Connect4Env()
-    # plt.ion()
-    # agent = DQNAgent(env,
-    #                  gamma=0.99,
-    #                  learning_rate=1e-5,
-    #                  buffer_size=40_000,
-    #                  initial_epsilon=0.99,
-    #                  final_epsilon=0.10,
-    #                  exploration_fraction=0.85,
-    #                  target_network_update_freq=20_000,  # temproaly correlated epsiode?
-    #                  batch_size=256,
-    #                  device='cpu',
-    #                  update_method='standard',
-    #                  plotting_smoothing=5000,
-    #                  )
-    # agent.train(400_000)
 
     agent = DQNAgent(env,
                      gamma=0.9999,
                      learning_rate=1e-5,
                      buffer_size=25_000,
-                     initial_epsilon=0.75,
-                     final_epsilon=0.25,
-                     exploration_fraction=0.75,
+                     initial_epsilon=0.95,
+                     final_epsilon=0.2,
+                     exploration_fraction=1.,
                      target_network_update_freq=25_000,  # temproaly correlated epsiode?
                      batch_size=256,
                      device='cpu',
                      update_method='standard',
                      plotting_smoothing=5000,
                      )
-    # agent.load('/Users/szlota777/Desktop/Spring2022/Cs4910/connect_four/robo-connectfour/20220402-102149')
-    print(f'Training Report:')
-    # print(f'simplistic win_percentage : {round(won, 4)}')
-    won, _ = simulate_against_random(agent)
-    print(f'random win_percentage : {round(won, 4)}')
-    won, _ = simulate_against_expert(agent)
-    print(f'expert win_percentage : {round(won, 4)}')
-
-    # agen
 
     root = '/Users/szlota777/Desktop/Spring2022/Cs4910/connect_four/robo-connectfour/saved'
 
     save_path = os.path.join(root, datetime.now().strftime("%Y%m%d-%H%M%S"))
+
     os.mkdir(save_path)
-    agent.train(250_000, save_path)
-    agent.save(os.path.join(save_path, 'network_weights'))
+    with open(os.path.join(save_path, 'parameters.txt'), 'w') as f:
+        for attr in dir(agent):
+            if type(getattr(agent, attr)) is int or type(getattr(agent, attr)) is float or type(
+                    getattr(agent, attr)) is str:
+                f.write("obj.%s = %r" % (attr, getattr(agent, attr)))
+                f.write('\n')
+
+    agent.train(200_000, save_path)
+    agent.save(os.path.join(save_path, 'final_network_weights'))
     # larger learning rate less freuqent update
 
     print(f'Training Report:')

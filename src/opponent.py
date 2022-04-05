@@ -35,5 +35,5 @@ class AgentOpponent:
         # random oppoenent
         net_ndx = np.random.choice(np.arange(min(self.size, self.cap)))
         network = self.networks[net_ndx]
-        pred = network.predict(t_obs, env).item()
+        pred = network.predict(t_obs, env)
         return pred

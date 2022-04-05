@@ -7,6 +7,7 @@ from numba import jit
 
 from agent import expert_action
 
+
 class Connect4Env(gym.Env):
     """
     Fills top down as oppsoed to bottom up
