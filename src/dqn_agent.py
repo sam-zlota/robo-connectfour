@@ -69,8 +69,6 @@ class DQNAgent:
         self.optim = torch.optim.Adam(self.network.parameters(),
                                       lr=learning_rate)
 
-        # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optim, step_size=300_000, gamma=0.5)
-
         self.opponent = AgentOpponent(self.device, self.env.action_space.n)
         self.opponent.update(self.target_network)
 
@@ -106,22 +104,21 @@ class DQNAgent:
         episode_len = 0
         for step in pbar:
             epsilon = self.compute_epsilon(step / (self.exploration_fraction * num_steps))
-            # epsilon = max(epsilon, 0.20) #TODO fix this
 
             a = self._select_action(s, epsilon)
             sp, r, done, info = self.env.step(a)
             episode_len += 1
-            # if not done:
-            #     # a_opp = self._select_action(sp1, epsilon)
-            #     a_opp = self._select_opp_action(epsilon)
-            #     sp, r_opp, done, info = self.env.step(a_opp)
-
-            #     r = -1 * r_opp
-            #     episode_len += 1
+            if not done:
+                # a_opp = self._select_action(sp1, epsilon)
+                a_opp = self._select_opp_action(epsilon)
+                sp, r_opp, done, info = self.env.step(a_opp)
+                r = -1 * r_opp
+                episode_len += 1
 
             episode_rewards += r
 
             self.buffer.add_transition(s=s, a=a, r=r, sp=sp, d=done)
+            s = sp.copy()
 
             # optimize
             if self.buffer.length > self.batch_size:
@@ -131,19 +128,19 @@ class DQNAgent:
 
                 if opt_count % self.target_network_update_freq == 0:
                     self.hard_target_update()
-                    # self.opponent.update(self.network)
+
             if step % 5000 == 0:
+                # add new oppoenent
                 self.opponent.update(self.network)
-            # evaluate
+
             if step % 2000 == 0:
-                # TODO expert success rate
+                # evaluate
                 success_rate_rand, elen_rand = simulate_against_random(self)
                 success_data_rand.append(success_rate_rand)
                 episode_len_rand.append(elen_rand)
                 success_rate_exp, elen_exp = simulate_against_expert(self)
                 if success_rate_exp > max(success_data_exp, default=0):
                     best_network = self.network
-                    # self.opponent.update(self.network)
                 success_data_exp.append(success_rate_exp)
                 episode_len_exp.append(elen_exp)
                 pbar.set_description(f'Success = {success_rate_rand, success_rate_exp}')
@@ -157,13 +154,11 @@ class DQNAgent:
                                          episode_len_exp,
                                          training_episode_lengths,
                                          save_path)
-            s = sp.copy()
+
             if done:
-                # s = self.env.reset(0)
-                num_pre_moves = np.random.randint(low=0, high=40)
                 num_pre_moves = 0
-                # num_pre_moves = int(np.random.rand() < 0.5)
                 s = self.env.reset(num_pre_moves)
+                # random starting player
                 self.env.player = 1 + (int(np.random.rand() < 0.5) * -2)
                 rewards_data.append(episode_rewards)
                 episode_rewards = 0
@@ -186,12 +181,6 @@ class DQNAgent:
         from replay buffer
         '''
         s, a, r, sp, d = self.buffer.sample(self.batch_size)
-        #
-        # s = torch.tensor(s, dtype=torch.float32).to(self.device).unsqueeze(0).permute(1, 0, 2, 3)
-        # a = torch.tensor(a, dtype=torch.long).to(self.device)
-        # r = torch.tensor(r, dtype=torch.float32).to(self.device)
-        # sp = torch.tensor(sp, dtype=torch.float32).to(self.device).unsqueeze(0).permute(1, 0, 2, 3)
-        # d = torch.tensor(d, dtype=torch.float32).to(self.device)
 
         s = torch.tensor(s, dtype=torch.float32).to(self.device)
         a = torch.tensor(a, dtype=torch.long).to(self.device)
@@ -200,26 +189,10 @@ class DQNAgent:
         d = torch.tensor(d, dtype=torch.float32).to(self.device)
 
         q_pred = self.network(s).gather(1, a.unsqueeze(1)).squeeze()
-        #
-        with torch.no_grad():
-            # TODO how to use done
-            q_target = r + self.gamma * torch.max(self.target_network(sp), dim=1)[0] # TODO
 
-        # if self.update_method == 'standard':
-        #     with torch.no_grad():
-        #         q_map_next = self.target_network(sp)
-        #         q_next = torch.max(torch.flatten(q_map_next, 1), dim=1)[0]
-        #         q_target = r + self.gamma * q_next * (1 - d)
-        #
-        # elif self.update_method == 'double':
-        #     with torch.no_grad():
-        #         q_map_curr = self.network(sp)
-        #         # best_act = argmax2d(q_map_curr)[0]
-        #         best_act = torch.argmax(q_map_curr.flatten())
-        #         q_targ = self.target_network(sp).flatten()[best_act]
-        #         # print(best_act)
-        #         # q_targ = self.target_network(sp)[best_act]
-        #         q_target = r + self.gamma * q_targ * (1 - d)
+        with torch.no_grad():
+            q_target = r + self.gamma * torch.max(self.target_network(sp), dim=1)[
+                0]  # TODO should this be multipled by (1-d)
 
         self.optim.zero_grad()
 
@@ -228,42 +201,29 @@ class DQNAgent:
         loss.backward()
 
         # it is common to clip gradient to prevent instability
-        # TODO
         nn.utils.clip_grad_norm_(self.network.parameters(), 10)
         self.optim.step()
-        # self.scheduler.step()
         return loss.item()
 
     def _select_action(self, state: np.ndarray, epsilon: float = 0.) -> int:
-        # if epsilon == 0.2:
-        #     if np.random.random() < epsilon:
-        #         return np.random.choice(self.env.legal_actions())
-        #     else:
-        #         return self.policy(self.env.get_observation())
 
         '''Performs e-greedy action selection'''
         if np.random.random() < epsilon:
             return np.random.choice(self.env.legal_actions())
+            # uncomment for demonstration
             # return expert_action(self.env.board, self.env.player, np.random.choice(self.env.legal_actions()))
-        # elif np.random.random() < epsilon:
-        #     return expert_action(self.env.board, self.env.player, np.random.choice(self.env.legal_actions()))
         else:
             return self.policy(self.env.get_observation())
 
     def _select_opp_action(self, epsilon: float = 0.) -> int:
-        # if epsilon == 0.2:
-        #     if np.random.random() < epsilon:
-        #         return np.random.choice(self.env.legal_actions())
-        #     else:
-        #         return self.opponent.act(self.env)
-
         '''Performs e-greedy action selection'''
         if np.random.random() < epsilon:
             return np.random.choice(self.env.legal_actions())
+            # uncomment for demonstration
             # return expert_action(self.env.board, self.env.player, np.random.choice(self.env.legal_actions()))
-        # elif np.random.random() < epsilon:
-        #     return expert_action(self.env.board, self.env.player, np.random.choice(self.env.legal_actions()))
+
         else:
+            # choose random of recent past selfs
             return self.opponent.act(self.env)
 
     def select_action(self, env):
@@ -350,13 +310,17 @@ def main():
                      initial_epsilon=0.95,
                      final_epsilon=0.2,
                      exploration_fraction=1.,
-                     target_network_update_freq=25_000,  # temproaly correlated epsiode?
+                     target_network_update_freq=25_000,
                      batch_size=256,
                      device='cpu',
                      update_method='standard',
                      plotting_smoothing=5000,
                      )
 
+    # where u want run info to be saved
+    # will save a parameters.txt file
+    # best_network_weights and final_network_weights_file
+    # as well as a plot after each 20_000 steps
     root = '/Users/szlota777/Desktop/Spring2022/Cs4910/connect_four/robo-connectfour/saved'
 
     save_path = os.path.join(root, datetime.now().strftime("%Y%m%d-%H%M%S"))
@@ -371,7 +335,6 @@ def main():
 
     agent.train(200_000, save_path)
     agent.save(os.path.join(save_path, 'final_network_weights'))
-    # larger learning rate less freuqent update
 
     print(f'Training Report:')
     # print(f'simplistic win_percentage : {round(won, 4)}')

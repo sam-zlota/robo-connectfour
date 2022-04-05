@@ -14,8 +14,6 @@ class ReplayBuffer:
         self.size = size
         self.length = 0
         self._idx = 0
-        # self._num_seen = 0
-        # self._offset = self.size // 10
 
     def add_transition(self, s: np.ndarray, a: int, r: float,
                        sp: np.ndarray, d: bool) -> None:
@@ -27,13 +25,8 @@ class ReplayBuffer:
 
         self._idx = (self._idx + 1) % self.size
 
-        # if self._num_seen > self._offset:
-        #     self._idx = ((self._idx + 1) % (self.size - self._offset)) + self._offset
-        # else:
         self._idx = (self._idx + 1) % self.size
-        # self._idx =
         self.length = min(self.length + 1, self.size)
-        # self._num_seen +=1
 
     def sample(self, batch_size: int) -> Tuple:
         idxs = np.random.randint(0, self.length, batch_size)
