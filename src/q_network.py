@@ -5,7 +5,7 @@ import numpy as np
 
 
 class QNetwork(nn.Module):
-    def __init__(self, observation_size = 3 * 6 * 7, n_actions = 7) -> None:
+    def __init__(self, )  -> None:
         '''Q-Network instantiated as 3-layer MLP with 64 units
 
         Parameters
@@ -16,7 +16,8 @@ class QNetwork(nn.Module):
             number of actions in action space
         '''
         super().__init__()
-
+        observation_size = (3 * 6 * 7)
+        n_actions = 7
         self.layers = nn.Sequential(
             nn.Flatten(),
             nn.Linear(observation_size, 256),

@@ -60,10 +60,8 @@ class DQNAgent:
         self.buffer = ReplayBuffer(buffer_size, self.env.observation_space.shape[0])
 
         self.device = device
-        self.network = QNetwork(self.env.observation_space.shape[0],
-                                self.env.action_space.n).to(device)
-        self.target_network = QNetwork(self.env.observation_space.shape,
-                                       self.env.action_space.n).to(device)
+        self.network = QNetwork().to(device)
+        self.target_network = QNetwork().to(device)
         self.hard_target_update()
 
         self.optim = torch.optim.Adam(self.network.parameters(),
