@@ -5,10 +5,10 @@ from typing import Tuple
 class ReplayBuffer:
     def __init__(self, size: int, state_dim: int) -> None:
         self.data = {'s': np.zeros((size, 3, 6, 7), dtype=np.float32),
-                     'a': np.zeros((size), dtype=np.int32),
-                     'r': np.zeros((size), dtype=np.float32),
+                     'a': np.zeros(size, dtype=np.int32),
+                     'r': np.zeros(size, dtype=np.float32),
                      'sp': np.zeros((size, 3, 6, 7), dtype=np.float32),
-                     'd': np.zeros((size), dtype=np.bool8),
+                     'd': np.zeros(size, dtype=np.bool8),
                      }
 
         self.size = size
@@ -22,8 +22,6 @@ class ReplayBuffer:
         self.data['r'][self._idx] = r
         self.data['sp'][self._idx] = sp
         self.data['d'][self._idx] = d
-
-        self._idx = (self._idx + 1) % self.size
 
         self._idx = (self._idx + 1) % self.size
         self.length = min(self.length + 1, self.size)

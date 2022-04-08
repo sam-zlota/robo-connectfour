@@ -5,7 +5,7 @@ import numpy as np
 
 
 class QNetwork(nn.Module):
-    def __init__(self, )  -> None:
+    def __init__(self, ) -> None:
         '''Q-Network instantiated as 3-layer MLP with 64 units
 
         Parameters
@@ -52,13 +52,10 @@ class QNetwork(nn.Module):
 
         q_vals = self.forward(s)
         best_acts = torch.argsort(q_vals, descending=True).reshape(-1).tolist()
-
         # only choose valid actions
         for act in best_acts:
             if env.board[5][act] == 0:
                 return act
-
-        return -1
 
     def compute_loss(self, q_pred: Tensor, q_target: Tensor) -> Tensor:
         return self.loss_fn(q_pred, q_target)

@@ -1,5 +1,4 @@
 import numpy as np
-from numba import jit
 
 
 class Agent:
@@ -13,7 +12,7 @@ class Agent:
 
 class RandomAgent(Agent):
     def select_action(self, env):
-        return env.action_space.sample()
+        return np.random.choice(env.legal_actions())
 
     def get_name(self):
         return 'Random Agent'
@@ -69,5 +68,3 @@ def expert_action(board, player, action):
 
     return action
 
-    print(expert_baseline())
-    print(random_baseline())

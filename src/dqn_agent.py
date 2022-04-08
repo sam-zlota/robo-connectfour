@@ -14,19 +14,10 @@ from opponent import AgentOpponent
 from q_network import QNetwork
 from replay_buffer import ReplayBuffer
 
-from simulation import simulate_against_random, simulate_against_expert
-
 from agent import expert_action
 
-import time
+from evaluation import SuccessTracker
 
-"""
-https://github.com/IASIAI/gym-connect-four/blob/fbb504596ff868acaf909b29b4f52f0cb0dd6e1e/gym_connect_four/envs/render.py
-"""
-
-
-class SuccessTracker:
-    pass
 
 
 class DQNAgent:
@@ -72,107 +63,89 @@ class DQNAgent:
 
         self.update_method = update_method
         self.plotting_smoothing = plotting_smoothing
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        if device == 'cuda':
-            torch.cuda.manual_seed(seed)
+        # np.random.seed(seed)
+        # torch.manual_seed(seed)
+        # if device == 'cuda':
+        #     torch.cuda.manual_seed(seed)
 
     def train(self, num_steps: int, save_path) -> None:
         '''Trains q-network for given number of environment steps, plots
         rewards and loss curve
         '''
-        rewards_data = []
-        loss_data = []
 
-        success_data_rand = []
-        episode_len_rand = []
+        training_metrics = {
+            'rewards_data': [],
+            'loss_data': [],
+            'training_episode_lengths': []
+        }
+        success_tracker = SuccessTracker()
 
-        success_data_exp = []
-        episode_len_exp = []
-
-        training_episode_lengths = []
-
-        best_network = None
         episode_count = 0
         episode_rewards = 0
         opt_count = 0
         s = self.env.reset()
+        play_history = np.zeros((num_steps, 50, 3), dtype=np.int8)
 
         pbar = tqdm(range(1, num_steps + 1))
         episode_len = 0
+        episode_number = 0
+
         for step in pbar:
             epsilon = self.compute_epsilon(step / (self.exploration_fraction * num_steps))
 
             a = self._select_action(s, epsilon)
-            sp, r, done, info = self.env.step(a)
+            sp, r, done1, _ = self.env.step(a)
+            play_history[episode_number][episode_len] = (self.env.player * -1, a, r)
             episode_len += 1
-            if not done:
-                # a_opp = self._select_action(sp1, epsilon)
+            next_state = sp.copy()
+            if not done1:
                 a_opp = self._select_opp_action(epsilon)
-                sp, r_opp, done, info = self.env.step(a_opp)
-                r = -1 * r_opp
+                sp2, r_opp, done2, _ = self.env.step(a_opp)
+                play_history[episode_number][episode_len] = (self.env.player * -1, a_opp, r_opp)
+                if r_opp == 1:
+                    r = -1
+                    play_history[episode_number][episode_len - 1][2] = -1
+                next_state = sp2.copy()
                 episode_len += 1
+                self.buffer.add_transition(s=sp, a=a_opp, r=r_opp, sp=sp2, d=done2)
 
             episode_rewards += r
 
-            self.buffer.add_transition(s=s, a=a, r=r, sp=sp, d=done)
-            s = sp.copy()
+            self.buffer.add_transition(s=s, a=a, r=r, sp=sp, d=done1)
+
+            s = next_state
 
             # optimize
             if self.buffer.length > self.batch_size:
                 loss = self.optimize()
                 opt_count += 1
-                loss_data.append(loss)
+                training_metrics['loss_data'].append(loss)
 
                 if opt_count % self.target_network_update_freq == 0:
                     self.hard_target_update()
 
             if step % 5000 == 0:
-                # add new oppoenent
                 self.opponent.update(self.network)
 
             if step % 2000 == 0:
-                # evaluate
-                success_rate_rand, elen_rand = simulate_against_random(self)
-                success_data_rand.append(success_rate_rand)
-                episode_len_rand.append(elen_rand)
-                success_rate_exp, elen_exp = simulate_against_expert(self)
-                if success_rate_exp > max(success_data_exp, default=0):
-                    best_network = self.network
-                success_data_exp.append(success_rate_exp)
-                episode_len_exp.append(elen_exp)
-                pbar.set_description(f'Success = {success_rate_rand, success_rate_exp}')
-
+                success_tracker.evaluate(self)
                 if step % 20_000 == 0:
-                    self.training_report(rewards_data,
-                                         loss_data,
-                                         success_data_rand,
-                                         episode_len_rand,
-                                         success_data_exp,
-                                         episode_len_exp,
-                                         training_episode_lengths,
-                                         save_path)
+                    success_tracker.plot_metrics(save_path)
+                    self.training_report(training_metrics, save_path)
 
-            if done:
-                num_pre_moves = 0
+            if done1 or done2:
+                num_pre_moves = np.random.randint(low=0, high=35)
                 s = self.env.reset(num_pre_moves)
                 # random starting player
-                self.env.player = 1 + (int(np.random.rand() < 0.5) * -2)
-                rewards_data.append(episode_rewards)
+                # self.env.player = 1 + (int(np.random.rand() < 0.5) * -2)
+                training_metrics['rewards_data'].append(episode_rewards)
                 episode_rewards = 0
                 episode_count += 1
-                training_episode_lengths.append(episode_len)
+                training_metrics['training_episode_lengths'].append(episode_len)
                 episode_len = num_pre_moves
 
-        best_network.save(os.path.join(save_path, 'best_network_weights'))
-        return self.training_report(rewards_data,
-                                    loss_data,
-                                    success_data_rand,
-                                    episode_len_rand,
-                                    success_data_exp,
-                                    episode_len_exp,
-                                    training_episode_lengths,
-                                    save_path)
+                episode_number += 1
+        np.save(os.path.join(save_path, 'play_history'), play_history[:episode_number + 1])
 
     def optimize(self) -> float:
         '''Optimize Q-network by minimizing td-error on mini-batch sampled
@@ -180,21 +153,20 @@ class DQNAgent:
         '''
         s, a, r, sp, d = self.buffer.sample(self.batch_size)
 
+        # todo do these need to be permuted
         s = torch.tensor(s, dtype=torch.float32).to(self.device)
         a = torch.tensor(a, dtype=torch.long).to(self.device)
         r = torch.tensor(r, dtype=torch.float32).to(self.device)
         sp = torch.tensor(sp, dtype=torch.float32).to(self.device)
         d = torch.tensor(d, dtype=torch.float32).to(self.device)
 
-        q_pred = self.network(s).gather(1, a.unsqueeze(1)).squeeze()
+        q_pred = self.network(s).gather(1, a.unsqueeze(1)).squeeze() # TODO?
 
         with torch.no_grad():
-            q_target = r + self.gamma * torch.max(self.target_network(sp), dim=1)[
-                0]  # TODO should this be multipled by (1-d)
+            q_target = r + self.gamma * torch.max(self.target_network(sp), dim=1)[0]  # TODO should this be multipled by (1-d)
 
         self.optim.zero_grad()
 
-        # assert q_pred.shape == q_target.shape
         loss = self.network.compute_loss(q_pred, q_target)
         loss.backward()
 
@@ -211,7 +183,7 @@ class DQNAgent:
             # uncomment for demonstration
             # return expert_action(self.env.board, self.env.player, np.random.choice(self.env.legal_actions()))
         else:
-            return self.policy(self.env.get_observation())
+            return self.policy(self.env.get_observation(), self.env)
 
     def _select_opp_action(self, epsilon: float = 0.) -> int:
         '''Performs e-greedy action selection'''
@@ -219,13 +191,12 @@ class DQNAgent:
             return np.random.choice(self.env.legal_actions())
             # uncomment for demonstration
             # return expert_action(self.env.board, self.env.player, np.random.choice(self.env.legal_actions()))
-
         else:
             # choose random of recent past selfs
             return self.opponent.act(self.env)
 
     def select_action(self, env):
-        return self.policy(env.get_observation())
+        return self.policy(env.get_observation(), env)
 
     def compute_epsilon(self, fraction: float) -> float:
         '''Compute epsilon value based on fraction of training steps'''
@@ -236,53 +207,40 @@ class DQNAgent:
         '''Copy weights of q-network to target q-network'''
         self.target_network.load_state_dict(self.network.state_dict())
 
-    def policy(self, obs: np.ndarray) -> int:
+    def policy(self, obs: np.ndarray, env) -> int:
         '''Calculates argmax of Q-function at given state'''
         t_obs = torch.tensor(obs, dtype=torch.float32,
                              device=self.device).unsqueeze(0)
-        return self.network.predict(t_obs, self.env)
+        return self.network.predict(t_obs, env)
 
     def training_report(self,
-                        rewards_data,
-                        loss_data,
-                        success_data_rand,
-                        episode_len_rand,
-                        success_data_exp,
-                        episode_len_exp,
-                        training_episode_lengths,
-                        save_path):
+                        training_metrics, save_path):
 
-        f, axs = plt.subplots(5, 1, figsize=(5, 10))
+        f, axs = plt.subplots(3, 1, figsize=(10, 18))
 
-        axs[0].plot(np.convolve(rewards_data, np.ones(self.plotting_smoothing) / self.plotting_smoothing, 'valid'))
+        axs[0].plot(
+            np.convolve(training_metrics['rewards_data'], np.ones(self.plotting_smoothing) / self.plotting_smoothing,
+                        'valid'))
         axs[0].set_xlabel('episodes')
         axs[0].set_ylabel('sum of rewards')
+        axs[0].set_title('Sum of Rewars')
 
-        axs[1].plot(np.convolve(loss_data, np.ones(self.plotting_smoothing) / self.plotting_smoothing, 'valid'))
+        axs[1].plot(
+            np.convolve(training_metrics['loss_data'], np.ones(self.plotting_smoothing) / self.plotting_smoothing,
+                        'valid'))
         axs[1].set_xlabel('opt steps')
         axs[1].set_ylabel('td loss')
+        axs[1].set_title('Loss')
 
         axs[2].plot(
-            np.convolve(training_episode_lengths, np.ones(self.plotting_smoothing) / self.plotting_smoothing, 'valid'))
+            np.convolve(training_metrics['training_episode_lengths'],
+                        np.ones(self.plotting_smoothing) / self.plotting_smoothing, 'valid'))
         axs[2].set_xlabel('opt steps')
         axs[2].set_ylabel('training episode length')
-
-        # axs[3].plot(episode_len_simple, label='simple',color='red')
-        axs[3].plot(episode_len_rand, label='random', color='green')
-        axs[3].plot(episode_len_exp, label='expert', color='orange')
-        axs[3].set_xlabel('trials')
-        axs[3].set_ylabel('episode length')
-        axs[3].legend()
-
-        # axs[4].plot(success_data_simple, label='simple', color='red')
-        axs[4].plot(success_data_rand, label='random', color='green')
-        axs[4].plot(success_data_exp, label='expert', color='orange')
-        axs[4].set_xlabel('trials')
-        axs[4].set_ylabel('success rate')
-        axs[4].legend()
+        axs[2].set_title('Training Episode Lengths')
 
         plt.tight_layout()
-        plt.savefig(os.path.join(save_path, datetime.now().strftime("%Y%m%d-%H%M%S") + '-fig.png'))
+        plt.savefig(os.path.join(save_path, datetime.now().strftime("%Y%m%d-%H%M%S") + '-training-fig.png'))
 
         plt.close('all')
 
@@ -302,7 +260,7 @@ def main():
     env = Connect4Env()
 
     agent = DQNAgent(env,
-                     gamma=0.9999,
+                     gamma=0.99,
                      learning_rate=1e-5,
                      buffer_size=25_000,
                      initial_epsilon=0.95,
@@ -331,15 +289,8 @@ def main():
                 f.write("obj.%s = %r" % (attr, getattr(agent, attr)))
                 f.write('\n')
 
-    agent.train(200_000, save_path)
+    agent.train(1_000_000, save_path)
     agent.save(os.path.join(save_path, 'final_network_weights'))
-
-    print(f'Training Report:')
-    # print(f'simplistic win_percentage : {round(won, 4)}')
-    won, _ = simulate_against_random(agent)
-    print(f'random win_percentage : {round(won, 4)}')
-    won, _ = simulate_against_expert(agent)
-    print(f'expert win_percentage : {round(won, 4)}')
 
 
 if __name__ == "__main__":

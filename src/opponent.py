@@ -14,12 +14,12 @@ class AgentOpponent:
         self.n_actions = n_actions
 
     def update(self, new_network):
-        self.networks[(self.size) % self.cap] = new_network
+        self.networks[self.size % self.cap] = new_network
         self.size += 1
 
     def act(self, env):
-        t_obs= torch.tensor(env.get_observation(), dtype=torch.float32,
-                               device=self.device).unsqueeze(0)
+        t_obs = torch.tensor(env.get_observation(), dtype=torch.float32,
+                             device=self.device).unsqueeze(0)
 
         # random oppoenent
         net_ndx = np.random.choice(np.arange(min(self.size, self.cap)))

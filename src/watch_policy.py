@@ -62,6 +62,7 @@ def watch_self_play(path):
                 game.reset_game()
                 env.reset()
 
+
 def watch_expert_play():
     game = Connect4Game()
     env = Connect4Env()
@@ -176,7 +177,49 @@ def human_play_against(path):
                     human_turn = True
 
 
-if __name__ == '__main__':
+def human_play_against_expert():
+    game = Connect4Game()
+    env = Connect4Env()
+    expert = ExpertAgent()
+    game.reset_game()
 
-    save_dir='/Users/szlota777/Desktop/Spring2022/CS4910/connect_four/robo-connectfour/saved/20220405-161110'
+    view = Connect4Viewer(game=game)
+    view.initialize()
+
+    running = True
+    human_turn = False
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if human_turn:
+
+                if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                    if game.get_win() is None:
+                        human_act = pygame.mouse.get_pos()[0] // SQUARE_SIZE
+                        env.step(human_act)
+                        game.place(human_act)
+                        human_turn = False
+                    else:
+                        game.reset_game()
+                        env.reset()
+                        human_turn = False
+
+            else:
+                if game.get_win() is None:
+                    print('Expert Running')
+                    computer_act = expert(env)
+                    env.step(computer_act)
+                    game.place(computer_act)
+                    print('Expert took', computer_act)
+                    human_turn = True
+                else:
+                    game.reset_game()
+                    env.reset()
+                    human_turn = True
+
+
+if __name__ == '__main__':
+    save_dir = '/Users/szlota777/Desktop/Spring2022/CS4910/connect_four/robo-connectfour/saved/20220407-231913'
     watch_self_play(os.path.join(save_dir, 'final_network_weights'))
+    # human_play_against_expert()
