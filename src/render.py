@@ -65,7 +65,7 @@ class Connect4Game(Observable):
 		Resets the game state (board and variables)
 		"""
         self._board = [[0 for _ in range(self._rows)] for _ in range(self._cols)]
-        self._turn = random.randint(1, 2)
+        self._turn = 1
         # self._turn = 1
         self._won = None
         self.notify(Event.GAME_RESET)

@@ -84,7 +84,7 @@ class DQNAgent:
         episode_rewards = 0
         opt_count = 0
         s = self.env.reset()
-        play_history = np.zeros((num_steps, 50, 3), dtype=np.int8)
+        # play_history = np.zeros((num_steps, 50, 3), dtype=np.int8)
 
         pbar = tqdm(range(1, num_steps + 1))
         episode_len = 0
@@ -95,19 +95,19 @@ class DQNAgent:
 
             a = self._select_action(s, epsilon)
             sp, r, done1, _ = self.env.step(a)
-            play_history[episode_number][episode_len] = (self.env.player * -1, a, r)
+            # play_history[episode_number][episode_len] = (self.env.player * -1, a, r)
             episode_len += 1
             next_state = sp.copy()
-            if not done1:
-                a_opp = self._select_opp_action(epsilon)
-                sp2, r_opp, done2, _ = self.env.step(a_opp)
-                play_history[episode_number][episode_len] = (self.env.player * -1, a_opp, r_opp)
-                if r_opp == 1:
-                    r = -1
-                    play_history[episode_number][episode_len - 1][2] = -1
-                next_state = sp2.copy()
-                episode_len += 1
-                self.buffer.add_transition(s=sp, a=a_opp, r=r_opp, sp=sp2, d=done2)
+            # if not done1:
+            #     a_opp = self._select_opp_action(epsilon)
+            #     sp2, r_opp, done2, _ = self.env.step(a_opp)
+            #     play_history[episode_number][episode_len] = (self.env.player * -1, a_opp, r_opp)
+            #     if r_opp == 1:
+            #         r = -1
+            #         play_history[episode_number][episode_len - 1][2] = -1
+            #     next_state = sp2.copy()
+            #     episode_len += 1
+            #     self.buffer.add_transition(s=sp, a=a_opp, r=r_opp, sp=sp2, d=done2)
 
             episode_rewards += r
 
@@ -124,17 +124,22 @@ class DQNAgent:
                 if opt_count % self.target_network_update_freq == 0:
                     self.hard_target_update()
 
-            if step % 5000 == 0:
-                self.opponent.update(self.network)
+            # if step % 5000 == 0:
+            #     self.opponent.update(self.network)
 
-            if step % 2000 == 0:
+            if step % 200_000 == 0:
+                self.save(os.path.join(save_path, datetime.now().strftime("%Y%m%d-%H%M%S") + '-weights'))
+
+            if step % 10_000 == 0:
                 success_tracker.evaluate(self)
-                if step % 20_000 == 0:
+                if step % 50_000 == 0:
                     success_tracker.plot_metrics(save_path)
                     self.training_report(training_metrics, save_path)
 
-            if done1 or done2:
-                num_pre_moves = np.random.randint(low=0, high=35)
+            # if done1 or done2:
+            if done1:
+                #num_pre_moves = np.random.randint(low=0, high=35)
+                num_pre_moves = 0
                 s = self.env.reset(num_pre_moves)
                 # random starting player
                 # self.env.player = 1 + (int(np.random.rand() < 0.5) * -2)
@@ -145,7 +150,7 @@ class DQNAgent:
                 episode_len = num_pre_moves
 
                 episode_number += 1
-        np.save(os.path.join(save_path, 'play_history'), play_history[:episode_number + 1])
+
 
     def optimize(self) -> float:
         '''Optimize Q-network by minimizing td-error on mini-batch sampled
@@ -153,7 +158,6 @@ class DQNAgent:
         '''
         s, a, r, sp, d = self.buffer.sample(self.batch_size)
 
-        # todo do these need to be permuted
         s = torch.tensor(s, dtype=torch.float32).to(self.device)
         a = torch.tensor(a, dtype=torch.long).to(self.device)
         r = torch.tensor(r, dtype=torch.float32).to(self.device)
@@ -163,7 +167,7 @@ class DQNAgent:
         q_pred = self.network(s).gather(1, a.unsqueeze(1)).squeeze() # TODO?
 
         with torch.no_grad():
-            q_target = r + self.gamma * torch.max(self.target_network(sp), dim=1)[0]  # TODO should this be multipled by (1-d)
+            q_target = r + self.gamma * torch.max(self.target_network(sp), dim=1)[0] * (1-d)  # TODO should this be multipled by (1-d)
 
         self.optim.zero_grad()
 
@@ -176,24 +180,25 @@ class DQNAgent:
         return loss.item()
 
     def _select_action(self, state: np.ndarray, epsilon: float = 0.) -> int:
-
         '''Performs e-greedy action selection'''
         if np.random.random() < epsilon:
-            return np.random.choice(self.env.legal_actions())
-            # uncomment for demonstration
-            # return expert_action(self.env.board, self.env.player, np.random.choice(self.env.legal_actions()))
+            if epsilon < 0.4:
+                return np.random.choice(self.env.legal_actions())
+            else:
+            #uncomment for demonstration
+                return expert_action(self.env.board, self.env.player, np.random.choice(self.env.legal_actions()))
         else:
             return self.policy(self.env.get_observation(), self.env)
 
-    def _select_opp_action(self, epsilon: float = 0.) -> int:
-        '''Performs e-greedy action selection'''
-        if np.random.random() < epsilon:
-            return np.random.choice(self.env.legal_actions())
-            # uncomment for demonstration
-            # return expert_action(self.env.board, self.env.player, np.random.choice(self.env.legal_actions()))
-        else:
-            # choose random of recent past selfs
-            return self.opponent.act(self.env)
+    # def _select_opp_action(self, epsilon: float = 0.) -> int:
+    #     '''Performs e-greedy action selection'''
+    #     if np.random.random() < epsilon:
+    #         return np.random.choice(self.env.legal_actions())
+    #         # uncomment for demonstration
+    #         # return expert_action(self.env.board, self.env.player, np.random.choice(self.env.legal_actions()))
+    #     else:
+    #         # choose random of recent past selfs
+    #         return self.opponent.act(self.env)
 
     def select_action(self, env):
         return self.policy(env.get_observation(), env)
@@ -209,6 +214,9 @@ class DQNAgent:
 
     def policy(self, obs: np.ndarray, env) -> int:
         '''Calculates argmax of Q-function at given state'''
+        winning_moves = env.get_winning_moves()
+        if winning_moves:
+            return np.random.choice(winning_moves)
         t_obs = torch.tensor(obs, dtype=torch.float32,
                              device=self.device).unsqueeze(0)
         return self.network.predict(t_obs, env)
@@ -223,7 +231,7 @@ class DQNAgent:
                         'valid'))
         axs[0].set_xlabel('episodes')
         axs[0].set_ylabel('sum of rewards')
-        axs[0].set_title('Sum of Rewars')
+        axs[0].set_title('Sum of Rewards')
 
         axs[1].plot(
             np.convolve(training_metrics['loss_data'], np.ones(self.plotting_smoothing) / self.plotting_smoothing,
@@ -262,11 +270,11 @@ def main():
     agent = DQNAgent(env,
                      gamma=0.99,
                      learning_rate=1e-5,
-                     buffer_size=25_000,
+                     buffer_size=150_000,
                      initial_epsilon=0.95,
-                     final_epsilon=0.2,
+                     final_epsilon=0.01,
                      exploration_fraction=1.,
-                     target_network_update_freq=25_000,
+                     target_network_update_freq=40_000,
                      batch_size=256,
                      device='cpu',
                      update_method='standard',
@@ -289,7 +297,10 @@ def main():
                 f.write("obj.%s = %r" % (attr, getattr(agent, attr)))
                 f.write('\n')
 
-    agent.train(1_000_000, save_path)
+
+    # path_to_existing_agent = '/Users/szlota777/Desktop/Spring2022/CS4910/connect_four/robo-connectfour/saved/20220420-194327/final_network_weights'
+    # agent.load(path_to_existing_agent)
+    agent.train(5_000_000, save_path)
     agent.save(os.path.join(save_path, 'final_network_weights'))
 
 

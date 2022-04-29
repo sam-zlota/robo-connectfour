@@ -6,7 +6,7 @@ import pygame
 from numba import jit
 
 from agent import expert_action
-
+from tqdm import trange
 
 class Connect4Env(gym.Env):
     """
@@ -49,20 +49,20 @@ class Connect4Env(gym.Env):
             if self.board[i][action] == 0:
                 self.board[i][action] = self.player
                 break
-        else:
-            raise RuntimeError('BAD')
+        # else:
+        #     raise RuntimeError('BAD')
 
         self.has_winner = have_winner(self.board, self.player)
         if self.has_winner:
             self.result = self.player
 
-        self.player *= -1
+        # self.player *= -1
         reward = None
         if not self.simulation_mode:
             reward = 1 if self.has_winner else 0
-            # if reward == 0:
-            #     # assume optimal player will always win if they can
-            #     reward = -1 if self.can_opponent_win() else 0
+            if reward == 0:
+                # assume optimal player will always win if they can
+                reward = -1 if self.can_opponent_win_on_next_move() else 0
 
             if self.dense_reward and reward == 0:
                 num_three_in_a_row = any_three(self.board, self.player)
@@ -85,7 +85,7 @@ class Connect4Env(gym.Env):
                             reward = 0.1
                             self.num_two_in_a_row_p2 = num_two_in_a_row
 
-        # self.player *= -1
+        self.player *= -1
 
         return self.get_observation(), reward, self.game_over(), []
 
@@ -101,9 +101,24 @@ class Connect4Env(gym.Env):
     def legal_actions(self):
         return np.argwhere(self.board[5] == 0).reshape(-1)
 
-    def can_opponent_win(self):
+    def get_winning_moves(self):
         board_copy = self.board.copy()
-        other_player = self.player
+        winning_moves = []
+        for action in self.legal_actions():
+            for i in range(self.height):
+                if board_copy[i][action] == 0:
+                    board_copy[i][action] = self.player
+                    if have_winner(board_copy, self.player):
+                        winning_moves.append(action)
+                    else:
+                        break
+            board_copy = self.board.copy()
+
+        return winning_moves
+
+    def can_opponent_win_on_next_move(self):
+        board_copy = self.board.copy()
+        other_player = self.player * -1
         # winning_moves = []
         for action in self.legal_actions():
             for i in range(self.height):
@@ -111,7 +126,9 @@ class Connect4Env(gym.Env):
                     board_copy[i][action] = other_player
                     if have_winner(board_copy, other_player):
                         return True
-                    board_copy = self.board.copy()
+                    else:
+                        break
+            board_copy = self.board.copy()
 
             #
             # # board_copy[5][act] = other_player
@@ -169,6 +186,56 @@ def have_winner(board, player):
                 return True
 
     return False
+
+
+@jit
+def have_winner_and_type(board, player):
+    # Horizontal check
+    for i in range(4):
+        for j in range(6):
+            if (
+                    board[j][i] == player
+                    and board[j][i + 1] == player
+                    and board[j][i + 2] == player
+                    and board[j][i + 3] == player
+            ):
+                return True, 'Horizontal'
+
+    # Vertical check
+    for i in range(7):
+        for j in range(3):
+            if (
+                    board[j][i] == player
+                    and board[j + 1][i] == player
+                    and board[j + 2][i] == player
+                    and board[j + 3][i] == player
+            ):
+                return True, 'Vertical'
+
+    # Positive diagonal check
+    for i in range(4):
+        for j in range(3):
+            if (
+                    board[j][i] == player
+                    and board[j + 1][i + 1] == player
+                    and board[j + 2][i + 2] == player
+                    and board[j + 3][i + 3] == player
+            ):
+                return True, 'Positive Diagonal'
+
+    # Negative diagonal check
+    for i in range(4):
+        for j in range(3, 6):
+            if (
+                    board[j][i] == player
+                    and board[j - 1][i + 1] == player
+                    and board[j - 2][i + 2] == player
+                    and board[j - 3][i + 3] == player
+            ):
+                return True, 'Negative Diagonal'
+
+    return False, 'Draw'
+
 
 
 @jit
@@ -270,13 +337,49 @@ def any_two(board, player):
     return amt
 
 
-if __name__ == '__main__':
+def simulate_random_game():
     env = Connect4Env()
-    game_over = False
+    while not env.game_over():
 
-    while not game_over:
-        print(env.board[::-1])
-        move = int(input(f'Choose move (Legal Actions: {env.legal_actions()}) :'))
-        print('Move chosen was', move)
-        env.step(move)
-        game_over = env.game_over()
+        #board, reward, done, _ = env.step(np.random.choice(env.legal_actions()))
+        board, reward, done, _ = env.step(np.random.choice(np.arange(7)))
+
+        if done:
+
+            _, result = have_winner_and_type(env.board, env.player * -1)
+            return result
+
+
+
+def compute_win_stats():
+    result_types = {
+        'Horizontal':0,
+        'Vertical':0,
+        'Positive Diagonal':0,
+        'Negative Diagonal':0,
+        'Draw':0
+    }
+    n_trials = 10000
+    for _ in trange(n_trials):
+        result = simulate_random_game()
+        result_types[result]+= 1
+    for type, amt in result_types.items():
+        print(f'{type}: {amt}, {np.ceil(round(amt/n_trials, 4) * 100)}%')
+    return result_types
+
+
+
+if __name__ == '__main__':
+    # env = Connect4Env()
+    # game_over = False
+    #
+    # while not game_over:
+    #     print(env.board[::-1])
+    #     print(env.get_winning_moves())
+    #     move = int(input(f'Choose move (Legal Actions: {env.legal_actions()}) :'))
+    #     print('Move chosen was', move)
+    #     env.step(move)
+    #
+    #     game_over = env.game_over()
+
+    compute_win_stats()

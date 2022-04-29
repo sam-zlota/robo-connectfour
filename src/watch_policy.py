@@ -103,36 +103,49 @@ def watch_play_against_expert(path):
     # dqn_agent = load_ai_agent(
     #     '/Users/szlota777/Desktop/Spring2022/CS4910/connect_four/robo-connectfour/saved/20220403-212644/network_weights', env)
     running = True
-    expert_turn = True
+    expert_turn = np.random.rand() < 0.5
+    if expert_turn:
+        print('EXPERT FIRST')
+    else:
+        print('DQN FIRST')
     while running:
         for event in pygame.event.get():
-            print(env.board[::-1], env.legal_actions())
+            #print(env.board[::-1], env.legal_actions())
             if event.type == pygame.QUIT:
                 running = False
             if expert_turn:
                 if game.get_win() is None:
                     expert_act = expert_agent(env)
+                    print('Expert took', expert_act)
                     env.step(expert_act)
                     game.place(expert_act)
                     expert_turn = False
-                    time.sleep(1)
+                    time.sleep(2)
                 else:
                     game.reset_game()
                     env.reset()
-                    expert_turn = True
+                    expert_turn = np.random.rand() < 0.5
+                    if expert_turn:
+                        print('EXPERT FIRST')
+                    else:
+                        print('DQN FIRST')
             else:
                 if game.get_win() is None:
-                    print('Computer Running')
+                    #print('Computer Running')
                     computer_act = dqn_agent(env)
                     print('Computer took', computer_act)
                     env.step(computer_act)
                     game.place(computer_act)
                     expert_turn = True
-                    time.sleep(1)
+                    time.sleep(2)
                 else:
                     game.reset_game()
                     env.reset()
-                    expert_turn = True
+                    expert_turn = np.random.rand() < 0.5
+                    if expert_turn:
+                        print('EXPERT FIRST')
+                    else:
+                        print('DQN FIRST')
 
 
 def human_play_against(path):
@@ -220,6 +233,11 @@ def human_play_against_expert():
 
 
 if __name__ == '__main__':
-    save_dir = '/Users/szlota777/Desktop/Spring2022/CS4910/connect_four/robo-connectfour/saved/20220407-231913'
-    watch_self_play(os.path.join(save_dir, 'final_network_weights'))
+    #20220418-225455, final_network_weights
+    # save_dir = '/Users/szlota777/Desktop/Spring2022/CS4910/connect_four/robo-connectfour/saved/20220408-142315'
+    # watch_play_against_expert(os.path.join(save_dir, 'final_network_weights'))
+    #
+    save_dir = '/Users/szlota777/Desktop/Spring2022/CS4910/connect_four/robo-connectfour/saved/20220424-234932'
+    # watch_play_against_expert(os.path.join(save_dir, '20220425-031145-weights'))
+    human_play_against(os.path.join(save_dir, '20220425-031145-weights'))
     # human_play_against_expert()

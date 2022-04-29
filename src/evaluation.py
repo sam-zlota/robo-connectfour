@@ -79,7 +79,7 @@ class SuccessTracker:
 
     def evaluate_agent_vs_agent(self, agent):
         win_percentage, loss_percentage, draw_percentage, average_game_length = self.play_many_games(agent,
-                                                                                                     agent)
+                                                                                                     agent, 1)
         self.evaluation_metrics['agent_vs_agent_wins_percentage'].append(win_percentage)
         self.evaluation_metrics['agent_vs_agent_losses_percentage'].append(loss_percentage)
         self.evaluation_metrics['agent_vs_agent_draws_percentage'].append(draw_percentage)
@@ -126,19 +126,19 @@ class SuccessTracker:
         axs = axs.flat
         axs[0].plot(self.evaluation_metrics['agent_vs_random_wins_percentage'], label='random', color='green')
         axs[0].plot(self.evaluation_metrics['agent_vs_expert_wins_percentage'], label='expert', color='darkorange')
-        axs[0].plot(self.evaluation_metrics['agent_vs_agent_wins_percentage'], label='self', color='red')
+        # axs[0].plot(self.evaluation_metrics['agent_vs_agent_wins_percentage'], label='self', color='red')
         axs[0].set_title('Win Percentage When Agent Goes First')
         axs[0].legend()
 
         axs[2].plot(self.evaluation_metrics['agent_vs_random_losses_percentage'], label='random', color='green')
         axs[2].plot(self.evaluation_metrics['agent_vs_expert_losses_percentage'], label='expert', color='darkorange')
-        axs[2].plot(self.evaluation_metrics['agent_vs_agent_losses_percentage'], label='self', color='red')
+        # axs[2].plot(self.evaluation_metrics['agent_vs_agent_losses_percentage'], label='self', color='red')
         axs[2].set_title('Loss Percentage When Agent Goes First')
         axs[2].legend()
 
         axs[4].plot(self.evaluation_metrics['agent_vs_random_draws_percentage'], label='random', color='green')
         axs[4].plot(self.evaluation_metrics['agent_vs_expert_draws_percentage'], label='expert', color='darkorange')
-        axs[4].plot(self.evaluation_metrics['agent_vs_agent_draws_percentage'], label='self', color='red')
+        # axs[4].plot(self.evaluation_metrics['agent_vs_agent_draws_percentage'], label='self', color='red')
         axs[4].set_title('Draw Percentage When Agent Goes First')
         axs[4].legend()
 
@@ -151,21 +151,21 @@ class SuccessTracker:
 
         axs[1].plot(self.evaluation_metrics['random_vs_agent_wins_percentage'], label='random', color='green')
         axs[1].plot(self.evaluation_metrics['expert_vs_agent_wins_percentage'], label='expert', color='darkorange')
-        axs[1].plot(1 - np.array(self.evaluation_metrics['agent_vs_agent_wins_percentage']), label='self', color='red')
+        # axs[1].plot(1 - np.array(self.evaluation_metrics['agent_vs_agent_wins_percentage']), label='self', color='red')
         axs[1].set_title('Win Percentage When Agent Goes Second')
         axs[1].legend()
 
         axs[3].plot(self.evaluation_metrics['random_vs_agent_losses_percentage'], label='random', color='green')
         axs[3].plot(self.evaluation_metrics['expert_vs_agent_losses_percentage'], label='expert', color='darkorange')
-        axs[3].plot(1 - np.array(self.evaluation_metrics['agent_vs_agent_losses_percentage']), label='self',
-                    color='red')
+        # axs[3].plot(1 - np.array(self.evaluation_metrics['agent_vs_agent_losses_percentage']), label='self',
+        #             color='red')
         axs[3].set_title('Loss Percentage When Agent Goes Second')
         axs[3].legend()
 
         axs[5].plot(self.evaluation_metrics['random_vs_agent_draws_percentage'], label='random', color='green')
         axs[5].plot(self.evaluation_metrics['expert_vs_agent_draws_percentage'], label='expert', color='darkorange')
         # TODO verify logic
-        axs[5].plot(self.evaluation_metrics['agent_vs_agent_draws_percentage'], label='self', color='red')
+        #axs[5].plot(self.evaluation_metrics['agent_vs_agent_draws_percentage'], label='self', color='red')
         axs[5].set_title('Draw Percentage When Agent Goes Second')
         axs[5].legend()
 
